@@ -1,3 +1,3 @@
 # FUNGEN
 
-CODE FROM FUNCTIONAL GENOMICS USING R
+Code from functional genomics using R
