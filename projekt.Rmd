@@ -1,0 +1,838 @@
+---
+title: "Functional genomics"
+author: "Ana Hojan and Eva Gajšt Kastelec"
+date: "April 2022"
+output: 
+    bookdown::html_document2:
+      toc: yes
+      toc_float: yes
+      code_folding: hide
+      fig_caption: yes
+bibliography: bibliography.bib  
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("bookdown")
+ 
+```
+# Introduction
+
+Analysis was done based of the article: Transcriptome analyses reveal tau isoform-driven changes in transposable element and gene expression [@grundman2021transcriptome]
+
+## Summary:
+This study was conducted on the MAPT gene's transcript, microtubule-associated protein tau, which undergoes complex, regulated alternative splicing, giving rise to several mRNA species. The result are several isoforms of tau protein, whose overexpression is typical of tauopathies (currently untreatable neurodegenerative diseases). Six of these isoforms exist in humans, distinguished by number of N-terminal repeats (0, 1 or 2) and microtubule-binding repeats (3R or 4R isoforms). Tau isoform imbalance is linked to: Alzheimer’s disease (AD) (3R and 4R tau), progressive supranuclear palsy (PSP) (4R tau), and Pick’s disease (PiD) (3R Tau).
+
+The article proposes that a more thorough examination of the role of the isoforms in diseases may reveal new details about tau-driven pathology. In particular, tau has been shown to promote activation of transposable elements—highly regulated nucleotide sequences that replicate throughout the genome and can promote immunologic responses and cellular stress. The study  therefore examined the roles of the isoforms in promoting cell damage and dysregulation of genes and transposable elements.
+
+Because of the isoform-driven presentations of tauopathies and the potential role of TE (transposable elements) dysregulation in promoting cell death, the researchers hypothesized that TE expression might be affected by the type of tau isoform driving disease, and that these changes would correlate with differences in RNA expression and rates of DNA damage and cell death.
+
+## Aims of the study
+The aim of this study was to determine whether there are any unique genomic consequences associated with overexpression of one or more tau isoforms using RNA-seq and techniques from molecular biology. They examined the roles of the isoforms in promoting cell damage and dysregulation of genes and transposable elements.
+
+## Experimental design
+Lentiviral infection was used to produce tau isoform overexpression in neuronally differentiated SH-SY5Y cells (neuroblastoma cells), along with treatment with DMSO or amyloid-beta oligomers to examine transcriptomic effects (N=3).	
+
+ SHSY-5Y cells were infected in triplicate with lentiviruses (genus of retroviruses) to induce overexpression of 3R and 4R tau isoforms, were treated with amyloid-beta oligomers or DMSO, and were differentiated into neurons using retinoic acid. After RNA collection via TRIzol, poly(A)-selected, 100 bp, paired-end library preparation and sequencing were completed using an Illumina NovaSeq 6000. Trimmed FASTQ files were aligned to GRCH38 using STAR, gene counts were determined through featureCounts from the package Subread and differential expression of genes and transposable elements was determined using DESeq2 and software from TEToolkit.
+ 
+ 
+  
+# Installing packages and data
+## Installing packages
+```{r message=FALSE, warning=FALSE, results='hide'}
+normalpackages<-c("rlang","tidyverse","readxl","writexl","lubridate","stringr","esquisse","miniUI","pheatmap","RColorBrewer","hexbin","BiocManager","reshape2","ggnewscale","ggbeeswarm", "purrr", "dplyr")
+biocpackages<-c("DESeq2","SummarizedExperiment","GEOquery","biomaRt","org.Hs.eg.db","org.Mm.eg.db","pathview","clusterProfiler","EnhancedVolcano","apeglm","genefilter","tximport","tximeta","GenomicFeatures")
+installandload<-function(
+  normalpackages,
+  biocpackages){
+  new.packages <- normalpackages[!(normalpackages %in% installed.packages()[,"Package"])]
+  if(length(new.packages)) {install.packages(new.packages,dependencies =T,quiet = T)}
+  new.bpackages <- biocpackages[!(biocpackages %in% installed.packages()[,"Package"])]
+  if(length(new.bpackages)) BiocManager::install(new.bpackages,update=T,ask=F)
+  all<-c(normalpackages,biocpackages)
+  invisible(lapply(all,function(x){
+    if(require(x,character.only=T,quietly=T)) library(x, quietly=T,character.only=T)}))
+  message("the packages")
+  print(all[all %in% installed.packages()[,"Package"]])
+  message("are loaded")
+}
+installandload(normalpackages,biocpackages)
+
+```
+
+
+
+```{r}
+R.Version()$version.string
+```
+
+```{r, echo=FALSE, results='hide'}
+versions<-map(normalpackages,packageVersion)
+names(versions)<-normalpackages
+      knitr::kable(as.data.frame(versions), caption = 'Normal Package Versions')
+      versions<-map(biocpackages,packageVersion)
+names(versions)<-biocpackages
+      knitr::kable(as.data.frame(versions), caption = 'Bioconductor Package Versions')
+```
+
+## Downloading data:
+
+```{r GEODATASET, message=FALSE, warning=FALSE}
+
+GEOid="GSE163150"
+gse<-getGEO(GEOid,GSEMatrix =TRUE)[[1]]
+se = as(gse, "SummarizedExperiment")
+
+
+
+```
+Dataset GSE163150 included 24 samples or 8 groups: \n
+
+- GSM4972791	LV3R DMSO-treated rep 1 \n
+- GSM4972792	LV3R DMSO-treated rep 2 \n
+- GSM4972793	LV3R DMSO-treated rep 3 \n
+- GSM4972794	LV4R DMSO-treated rep 1 \n
+- GSM4972795	LV4R DMSO-treated rep 2 \n
+- GSM4972796	LV4R DMSO-treated rep 3 \n
+- GSM4972797	LV3R4R DMSO-treated rep 1 \n
+- GSM4972798	LV3R4R DMSO-treated rep 2 \n
+- GSM4972799	LV3R4R DMSO-treated rep 3 \n
+- GSM4972800	LVCtrl DMSO-treated rep 1 \n
+- GSM4972801	LVCtrl DMSO-treated rep 2 \n
+- GSM4972802	LVCtrl DMSO-treated rep 3 \n
+- GSM4972803	LV3R amyloid-beta-treated rep 1 \n
+- GSM4972804	LV3R amyloid-beta-treated rep 2 \n
+- GSM4972805	LV3R amyloid-beta-treated rep 3 \n
+- GSM4972806	LV4R amyloid-beta-treated rep 1 \n
+- GSM4972807	LV4R amyloid-beta-treated rep 2 \n
+- GSM4972808	LV4R amyloid-beta-treated rep 3 \n
+- GSM4972809	LV3R4R amyloid-beta-treated rep 1 \n
+- GSM4972810	LV3R4R amyloid-beta-treated rep 2 \n
+- GSM4972811	LV3R4R amyloid-beta-treated rep 3 \n
+- GSM4972812	LVCtrl amyloid-beta-treated rep 1 \n
+- GSM4972813	LVCtrl amyloid-beta-treated rep 2 \n
+- GSM4972814	LVCtrl amyloid-beta-treated rep 3 \n
+ 
+Our report was based on the comparison of: 3R_only (GSM4972791, GSM4972792, GSM4972793), Ctrl_only (GSM4972800, GSM4972801, GSM4972802)
+
+More about geodataset can be found here
+[geodataset](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE163150)
+
+# Results
+## Exploratory data analysis
+
+```{r message=FALSE, warning=FALSE}
+# getwd()
+
+if("GSE163150" %in% list.files()){"you already have it"}else{getGEOSuppFiles("GSE163150")}
+#list.files("GSE163150")
+
+df<-read.table("GSE163150/GSE163150_featurecounts_matrix.txt.gz", skip=0, sep = "\t", header=TRUE)#, row.names = 1
+
+
+
+#df1<-read.csv("GSE163150/GSE163150_TElocal_cells_raw_counts_all.csv.gz" )
+
+
+# utils::browseURL(paste(getwd(),"GSE163150",sep="\\"))
+# head(df)
+
+#your dataframe should contain genes as rows and samples as columns,
+#hence we should not use Transcript.ID as rownames, use Gene.Name instead
+#but some Gene.Names are duplicated.
+
+library( "biomaRt" )
+mart = useMart('ensembl')
+# list all the ensembl database of organisms
+#view(listDatasets(mart))
+#choose database of your interest ; in this case its "cfamiliaris_gene_ensembl" I guess
+ensembl = useMart( "ensembl", dataset = "hsapiens_gene_ensembl" )  
+# choose attributes of your interest
+#view(listAttributes(ensembl))
+gene <- getBM( attributes =c("ensembl_gene_id","external_gene_name"),values = df$Geneid,mart = ensembl)  
+#Macth your transcript id with ensembl_transcript_id
+id <- match(df$Geneid , gene$ensembl_gene_id)
+#df<-df[,2:32]
+#df<-cbind("Gene.Name", df)
+df<-cbind(gene$external_gene_name[id],df)
+colnames(df[1])<-"GeneName" 
+names(df[1])<-"GeneName"
+
+
+# #df$[duplicated(df$Geneid)]
+# length(unique(df$ensambl_gene_id))
+# length(unique(df$`gene$external_gene_name[id]`))
+# #40270
+
+df%>%rename("GeneName"="gene$external_gene_name[id]")%>%group_by(GeneName)%>%summarise_if(is.numeric,sum)%>%as.data.frame->dfa
+
+dfb<-dfa[,-1]
+str<- str_extract(se@colData$characteristics_ch1.1, ": [a-zA-Z0-9 ]* tau")
+str<-str_replace(str, "^: ", "")
+str<-str_replace(str, " tau$", "")
+str[10:12]<-"empty"
+
+
+str[22:24]<-"empty"
+
+se@colData$characteristics_ch1.1<-factor(str)
+
+
+dfa[40270,1]<-"total"
+rownames(dfb)<-dfa[,1]
+
+dfb<-dfb[,2:25]
+R3_Ctr_df<-dfb[,c(7:9,19:21)]
+colnames(R3_Ctr_df)<-str_remove_all(colnames(R3_Ctr_df), ".bam$")
+
+se@colData<-se@colData[c(1:3,10:12),]
+
+rownames(se@colData)<-colnames(R3_Ctr_df)
+                
+
+
+se@colData$description<-str_remove_all(colnames(R3_Ctr_df), "(_1)|(_2)|(_3)")
+
+
+```
+
+
+```{r message=FALSE, warning=FALSE}
+library("DESeq2")
+
+
+dds <- DESeqDataSetFromMatrix(countData = R3_Ctr_df,
+                              colData = se@colData,
+                              design = ~ description,
+                              metadata=metadata(se))
+
+#accesing values:
+# dds@metadata
+# counts(dds)
+# dds$description
+
+```
+
+
+
+
+```{r fig1-DT, warning=FALSE, message=FALSE, fig.cap="Plots of different data transformations: log2(x+1), variance-stabilizing transformation (VST) and regularized logarithm (rlog)", echo=TRUE}
+#desq2 visualisation tut3
+
+# filtering (other criteria can be used as well)
+keep <- rowSums(counts(dds)) > 1
+dds <- dds[keep,]
+#25617
+
+#compute a variance stabilizing transformation which is roughly similar to putting the data on the log2 scale,
+vsd <- vst(dds, blind = FALSE)
+# head(assay(vsd), 3)
+
+
+# transformation option 2-rlog
+rld <- rlog(dds, blind = FALSE)
+
+
+## show the effect of transformation
+dds2 <- estimateSizeFactors(dds)
+
+df_trans <- bind_rows(
+  as_data_frame(log2(counts(dds2, normalized=TRUE)[, 1:2]+1)) %>%
+    mutate(transformation = "log2(x + 1)"),
+  as_data_frame(assay(vsd)[, 1:2]) %>% mutate(transformation = "vst"),
+  as_data_frame(assay(rld)[, 1:2]) %>% mutate(transformation = "rlog"))
+
+colnames(df_trans)[1:2] <- c("x", "y")  
+
+lvls <- c("log2(x + 1)", "vst", "rlog")
+df_trans$transformation <- factor(df_trans$transformation, levels=lvls)
+
+ggplot(df_trans, aes(x = x, y = y)) + geom_hex(bins = 80) +
+  coord_fixed() + facet_grid( . ~ transformation) + ggtitle("Plot of data transformations")
+
+```
+
+
+```{r fig2-heatmap, fig.cap="Heatmap of sample to sample distances between samples from R3 and control", message=FALSE, warning=FALSE}
+## sample distances
+sampleDists <- dist(t(assay(rld)))
+
+
+# visualize the distances in a heatmap
+# vsd$title
+sampleDistMatrix <- as.matrix( sampleDists )
+rownames(sampleDistMatrix) <-  paste( colnames(R3_Ctr_df), sep = " - " )
+
+#rownames(sampleDistMatrix) <- vsd$title
+colnames(sampleDistMatrix) <- paste( colnames(R3_Ctr_df), sep = " - " )
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = sampleDists,
+         clustering_distance_cols = sampleDists,
+         col = colors, main = "Heatmap of the sample-to-sample distances")
+
+```
+
+PCA plot:
+```{r fig3-PCAplot, fig.cap="Principal component analysis between R3 and control group"}
+# PCA plot
+
+#plotPCA(rld, intgroup = "title")
+plotPCA(rld, intgroup = "description") + ggtitle("Principle component analysis")
+
+
+
+```
+
+MDS plot:
+```{r fig4-MDS, fig.cap="Multidimentional scaling of 3R and control group"}
+## MDS
+mds <- as.data.frame(colData(rld))  %>%
+  cbind(cmdscale(sampleDistMatrix))
+
+
+ggplot(mds, aes(x = `1`, y = `2`, color = description)) +
+  geom_point(size = 3) + coord_fixed() + ggtitle("MDS with RLD data")
+
+
+
+```
+
+
+## Differental expression analysis
+
+
+Comparison between control and R3 group
+```{r message=FALSE, warning=FALSE}
+dds <- DESeq(dds)
+#5.2 Building the results table
+res <- results(dds)
+
+
+#you can only compare 2 factors at a time
+#its up to you pick 2 and focus on these
+res <- results(dds, contrast=c("description", "X3R","Ctrl"))
+#mcols(res, use.names = TRUE)
+summary(res)%>%knitr::kable(caption = "Summary of the results between R3 and control")
+
+
+res.05 <- results(dds, alpha = 0.05)
+#table(res.05$padj < 0.05)
+resLFC1 <- results(dds, lfcThreshold=1.5)
+#table(resLFC1$padj < 0.1)
+
+```
+
+
+Number of differentially expressed genes with p-value < 0.5:
+```{r}
+#5.4 Multiple testing
+# how many genes are differentially expressed based on p-value?
+
+sum(res$pvalue < 0.05, na.rm=TRUE) #2612
+```
+
+Number of differentially expressed genes with p-adjusted value < 0.05:
+```{r}
+sum(res$padj < 0.05, na.rm=TRUE)
+```
+
+
+Number of genes (without NA):
+```{r}
+sum(!is.na(res$pvalue)) #25607
+```
+
+
+Number of differentially expressed genes with p-value < 0.1:
+```{r}
+sum(res$padj < 0.1, na.rm=TRUE) #1218
+resSig <- subset(res, padj < 0.1)
+up <- subset(res, log2FoldChange>0)
+tab_upregulation<-up[order(up$log2FoldChange, decreasing = TRUE), ]
+```
+
+
+Top upregulating genes based of log2FC value: 
+```{r up, message=FALSE, warning=FALSE}
+
+tab_upregulation%>%head(10)%>% knitr::kable(caption = "top upregulating genes")
+
+```
+
+```{r}
+down<-subset(res, log2FoldChange < 0)
+tab_downregulation<-down[ order(down$log2FoldChange, decreasing = FALSE), ]
+```
+
+
+Top downregulating genes based of log2FC value:
+```{r down}
+
+tab_downregulation%>%head(10)%>% knitr::kable(caption = "top downregulating genes")
+```
+
+Top upregulatuing gene based of p-adjusted value without NA:
+```{r}
+topGene <- rownames(res)[which.min(res$padj)]
+topGene
+```
+
+
+PlotCounts of topgene:
+```{r fig5-topgene, fig.cap="Plot of the MAPT counts based of minimal p-adjusted value", message=FALSE, warning=FALSE}
+
+
+plotCounts(dds, gene = topGene, intgroup=c("description"))
+
+
+geneCounts <- plotCounts(dds, gene = topGene, intgroup = c("description","characteristics_ch1.1"),
+                         returnData = TRUE)
+
+
+
+
+```
+
+Genecounts:
+
+```{r fig6-genecounts, fig.cap="Plot of counts per group" }
+ggplot(geneCounts, aes(x = description, y = count, color = characteristics_ch1.1, group = characteristics_ch1.1)) +
+  scale_y_log10() + geom_point(size = 3) + geom_line() + 
+  theme(axis.text = element_text( 
+    angle = 45, 
+    size=7, 
+    face=1)
+  ) +  ggtitle("Gene Counts")
+
+```
+
+MA plot
+```{r fig7-MAplot, fig.cap="MA plot displaying the log fold-change compared with mean expression",  message=FALSE, warning=FALSE}
+#resultsNames(dds)
+res <- lfcShrink(dds, coef=2, type="apeglm")
+DESeq2::plotMA(res, ylim = c(-5, 5))
+
+
+```
+
+Heatmap
+```{r fig8-heat, fig.cap="Heatmap"}
+# gene clustering
+
+library("genefilter")
+rld <- rlog(dds, blind = FALSE)
+topVarGenes <- head(order(rowVars(assay(rld)), decreasing = TRUE), 20)
+mat  <- assay(rld)[ topVarGenes, ]
+mat  <- mat - rowMeans(mat)
+
+
+anno <- as.data.frame(colData(vsd)[,c("description","characteristics_ch1.1")])
+pheatmap(mat = mat, fontsize_row = 5)
+
+```
+
+```{r message=FALSE, warning=FALSE}
+#tut4 annotation
+database<-org.Hs.eg.db
+# columns(database)
+sampleIDS<-sapply(columns(database),function(x){head(keys(database,keytype=x),3)})
+# sampleIDS
+
+#compare with your GENE ID and find the match
+# rownames(counts(dds))%>%head%>% knitr::kable()
+
+#match(es) found
+
+# head(keys(database,keytype="ALIAS"),20)
+# head(keys(database,keytype="SYMBOL"),20)
+# unique(rownames(counts(dds)))%>%length()
+# sum(rownames(counts(dds)) %in% keys(database,keytype="ALIAS"))
+# sum(rownames(counts(dds)) %in% keys(database,keytype="SYMBOL"))
+# unique(rownames(counts(dds)))
+
+
+
+dfannotation<-AnnotationDbi::select(x=database,
+       keys = rownames(counts(dds)),
+       column = c("ENSEMBL","ENTREZID"),
+       keytype = "SYMBOL",
+       multiVals = "first")
+# dfannotation%>%head(10)
+
+
+dfannotation2<-mapIds(x=database,
+                      keys = rownames(counts(dds)),
+                      column = "ENSEMBL",
+                      keytype = "ALIAS",
+                      multiVals = "first")
+
+# dfannotation2%>%head(10)%>% knitr::kable()
+
+
+```
+
+
+```{r fig9-vulcano, fig.cap="Volcano plot", message=FALSE, warning=FALSE}
+df2<-as.data.frame(counts(dds))
+colData<-colData(dds)
+metadata<-metadata(dds)
+database<-org.Hs.eg.db
+
+dds <- DESeq(dds, betaPrior=FALSE)
+res <- results(dds,
+               contrast =  c("description", "X3R","Ctrl"))
+res <- lfcShrink(dds,
+                 contrast =  c("description", "X3R","Ctrl"), res=res, type = 'normal')
+# res
+
+EnhancedVolcano(res,
+                lab = rownames(res),
+                x = 'log2FoldChange',
+                y = 'pvalue', 
+                ylim = c(0,12),
+                xlim = c(-1.5,1.5),
+                pointSize = 1.0,
+                drawConnectors = T,
+                labSize = 1.5) 
+```
+
+```{r fig10-nonN, fig.cap="Boxplot of nonnormalised counts per sample" ,message=FALSE, warning=FALSE}
+#biomart tutorial 5
+# 
+# ensembl = useDataset("hsapiens_gene_ensembl",mart=ensembl)
+# filters = listFilters(ensembl)
+# # filters[1:10,]
+# attributes = listAttributes(ensembl)
+# # # attributes[1:50,1]
+# # attributes[grep("symbol",attributes$name),]
+# # attributes[grep("entrez",attributes$name),]
+# 
+# 
+# # rownames(counts(dds))
+# annotation1<-AnnotationDbi::select(x=database,
+#                       keys = rownames(counts(dds2)),
+#                       column = c("ENTREZID", "SYMBOL"),
+#                       keytype = "SYMBOL",
+#                       multiVals = "first")
+# 
+# # annotation1%>%dim()
+# # length(rownames(counts(dds)))
+# 
+# annotation2<-getBM(attributes=c("ensembl_gene_id","description","chromosome_name", 'entrezgene_id',"uniprot_gn_symbol","hgnc_symbol"), 
+#                    filters = "entrezgene_id", 
+#                   values =  annotation1$ENTREZID, 
+#                   mart = ensembl)
+# 
+# 
+# 
+# # class(annotation1$ENTREZID)
+# # class(annotation2$entrezgene_id)
+# annotation2$entrezgene_id<-as.character(annotation2$entrezgene_id)
+# annotation3<-annotation1%>%inner_join(annotation2,by=c("ENTREZID" = "entrezgene_id"))
+
+
+#Examine boxplot of the counts for each sample and of the normalized counts
+# counts(dds2)%>%head
+df3<-as.data.frame(counts(dds2))
+boxplot(x = as.list(df3)) 
+
+#library(reshape2)
+
+#non-normalized boxplots arent that great
+# ggplot(data = melt(df3), aes(x=variable, y=value)) + geom_boxplot(aes(fill=variable)) 
+
+```
+
+```{r fig-violin, fig.cap="Violin plot of count data transformed using regularized logarithm (rlog)", message=FALSE, warning=FALSE}
+
+#rlog transformation and boxplot
+rld <- rlog(dds)
+# assay(rld)%>%head
+df3<-as.data.frame(assay(rld))
+
+ggplot(data = melt(df3), aes(x=variable, y=value)) + geom_violin(aes(fill=variable))
+
+
+```
+
+```{r}
+dds <- DESeq(dds)
+res <- results(dds, contrast=c("description", "X3R","Ctrl"))
+
+res<-res[!is.na(res$padj),]
+SigExpGenes<-res[(res$padj < 0.05) & (abs(res$log2FoldChange)>1.5),]
+```
+
+
+```{r tab-SigExpGenes}
+
+SigExpGenes%>%head(10)%>%knitr::kable(caption = "Significantlly expressed genes")
+# rownames(counts(dds))%>%length
+
+```
+
+
+## Functional enrichment analysis
+
+
+```{r}
+ego <- enrichGO(gene          = rownames(SigExpGenes),
+                universe      = rownames(counts(dds)),
+                OrgDb         = org.Hs.eg.db,
+                keyType       = 'ALIAS',
+                ont           = "BP",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.05,
+                qvalueCutoff  = 0.05,
+                readable      = F)
+
+dfego<-as.data.frame(ego)
+```
+
+
+Top 10 biological processes
+```{r tab2-FEA}
+
+dfego[,2]%>%head(10)%>%knitr::kable(caption = "Top biological processes")
+
+```
+
+
+Dotplot:
+```{r fig11-dot, fig.cap="Dotplot showing the results of GO enrichment analysis", message=FALSE, warning=FALSE}
+#gene ontology
+
+dotplot(ego) + ggtitle("Dotplot of biological processies")
+ 
+
+```
+
+GOplot:
+```{r fig12-GOgoplot, fig.cap="GOplot depicting the results of the GO enrichment analysis", message=FALSE, warning=FALSE}
+goplot(ego)
+```
+
+
+Gene network:
+```{r fig13-cnetplot, fig.cap="Gene Concept network", message=FALSE, warning=FALSE}
+cnetplot(ego, categorySize = "pvalue" , color.params = list(foldChange =rownames(SigExpGenes)), colorEdge=T)
+
+
+
+```
+
+```{r message=FALSE, warning=FALSE}
+
+
+#from DiffExprAnal we found these genes to be differentially expressed. 
+
+res<-res[!is.na(res$padj),]
+SigExpGenes<-res[(res$padj < 0.05),]
+#893 only pvalue
+                 
+SigExpGenes<-res[(res$padj < 0.05) & (abs(res$log2FoldChange)>1.5),] 
+#rownames(SigExpGenes)%>%length #significally expressed genes
+#240
+
+# rownames(counts(dds))%>%length #all tested genes including NAs
+# res%>%nrow 
+
+SigExpGenes$ENTREZID<-AnnotationDbi::mapIds(x=database,
+                       keys = rownames(SigExpGenes),
+                       column = "ENTREZID",
+                       keytype = "SYMBOL",
+                       multiVals = "first")
+ 
+
+
+
+kk <- enrichKEGG(gene         = SigExpGenes$ENTREZID,
+                 organism     = 'hsa',
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 pvalueCutoff = 0.05)
+
+kkres<-as.data.frame(kk@result)
+
+significantkkres<-kkres[kkres$pvalue<kk@pvalueCutoff & kkres$p.adjust<kk@pvalueCutoff & kkres$qvalue < kk@qvalueCutoff,2,drop=F]
+
+
+geneList<-SigExpGenes$log2FoldChange
+names(geneList)<-SigExpGenes$ENTREZID
+
+download.pathway<-function(keggid){
+folder<-"pics"
+if (!("pics" %in% list.files())) {dir.create(folder)}
+setwd(folder)
+pic <- pathview(gene.data  = geneList,
+                     pathway.id = keggid,
+                     species    = stringr::str_extract(keggid,"[A-z]+"),
+                     limit      = list(gene=max(abs(geneList)), cpd=1))
+setwd("..")
+}
+
+
+#rownames(significantkkres)
+lapply(rownames(significantkkres),download.pathway)
+
+
+#6.3 KEGG Module over-representation test
+
+mkk <- enrichMKEGG(gene         = SigExpGenes$ENTREZID,
+                 organism     = 'hsa',
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 pvalueCutoff = 0.05)
+
+mkkres<-as.data.frame(mkk)
+
+```
+
+```{r MAPK-path, fig.cap="MAPK pathway. Other pathways are downloded into /pics directory"}
+knitr::include_graphics("pics/hsa04010.pathview.png")
+```
+
+
+```{r fig-MDSplot, fig.cap="MDS plot showing the data normalised with TMM method", message=FALSE, warning=FALSE}
+library("edgeR")
+count_data<-as.data.frame(counts(dds2))
+groups<-dds2$description
+
+d <- DGEList(counts=count_data, group=groups)
+
+cpm <- cpm(d)
+keep <- rowSums(cpm>1) >= ncol(cpm)/2 # adjust for your dataset
+# Here, a CPM value of 1 means that a gene is expressed if it has at least 20 counts (with a total of 20 million reads)
+d <- d[keep, ]
+d$samples$lib.size <- colSums(d$counts)
+
+#Normalizing the data
+
+# normalisation by the method of trimmed mean of M-values (TMM) is performed using the calcNormFactors
+d <- calcNormFactors(d, method= "TMM")
+plotMDS(d, method="bcv")
+col=as.numeric(d$samples$group)
+legend("bottomleft",
+       as.character(unique(d$samples$group)), col=1:3, pch=20)
+```
+
+
+
+```{r BCVplot, fig.cap="Biological coeficient of variation plot", message=FALSE, warning=FALSE}
+
+#Estimating the Dispersion
+d1 <- estimateCommonDisp(d, verbose=T)
+d1 <- estimateTagwiseDisp(d1)
+d1 <- estimateTrendedDisp(d1)
+names(d1)
+plotBCV(d1)
+
+
+
+```
+
+Differential expression using edgeR
+```{r}
+#Differential Expression
+#The exact test is only applicable to experiments with a single factor.
+
+design <- model.matrix(~groups) 
+y <- estimateDisp(d,design) 
+```
+
+
+```{r tab-quasiF}
+
+#To perform quasi-likelihood F-tests: 
+  fit <- glmQLFit(y,design) 
+ qlf <- glmQLFTest(fit,coef=2)
+ 
+topTags(qlf)%>%as.data.frame()%>% knitr::kable(digits= 32,caption = "top differentially expressed genes based on quasi-likelihood F-tests")
+
+
+
+```
+```{r tab-quasiR}
+#To perform likelihood ratio tests: 
+  fit <- glmFit(y,design) 
+lrt <- glmLRT(fit,coef=2) 
+topTags(lrt)%>%as.data.frame()%>% knitr::kable(digits = 32, caption = "top differentially expressed genes based on likelihood ratio tests")
+
+#topTags(lrt)%>%as.data.frame()%>% knitr::kable(digits = 5, caption = "top differentially expressed genes based on likelihood ratio tests")
+
+
+```
+
+
+# Interpretation of the results
+
+## Data transformation and exploratory data analysis
+The aim of this step of the is to check for potential outliers and sample mix-ups. Figure \@ref(fig:fig1-DT) shows different transformation methods used to stabilizes the variance across mean values. For further analysis we chose rlog, which is the best at dealing with small counts, compared to log2(x+1) and vst transformations.
+
+Figure \@ref(fig:fig2-heatmap) shows heatmap of sample to sample distances. The heatmap was clustered into 2 groups Control and XR3.
+Both , figure \@ref(fig:fig3-PCAplot) and figure \@ref(fig:fig4-MDS) have shown clear difference between the 2 groups. 
+
+
+## Differential expression analysis
+Differential expression analysis has found 2657 where p-value < 0.5 differentially expressed genes of the 21596 genes (without NA). And 1214 differentially expressed genes where p-value < 0.1. Top 10 upregulating genes are based of log2FC value - Table: \@ref(tab:up)
+
+Top down regulating genes are based of log2FC value- Table: \@ref(tab:down)
+
+Top significantlly expressed gene based of p-adjusted value was MAPT gene, however some of the more upregulating genes were missing p-adjusted values.
+Plotcounts of the MAPT gene shows clear destinction in differential expression between control and 3R groups. \@ref(fig:fig5-topgene)
+
+Figure: \@ref(fig:fig6-genecounts) shows Gene counts by group. We saw a higher level of expression in 3R group compared to the control, as they are clearly seperated.
+
+Figure: \@ref(fig:fig7-MAplot) showed high differential expression levels along the y axis, and with a higher number of genes above the threshold signifying upregulation.
+
+Figure: \@ref(fig:fig8-heat) showed clear clustering into R3 and control groups. In general R3 group had more genes that upregulated whereas the control group downregulated. Only in X3R1_1 sample we saw higher upregulation in CXCL8, TRAF1, BIRC3, IER3, and VCAM1  genes. Everywhere else they were downregulated. We also saw downregulation of the MAPT gene in the control group and upregulation in the R3 group.
+
+Figure: \@ref(fig:fig9-vulcano) showed a wider dispersion among the y axis which indicates a higher level of difference in gene expression between 2 groups.
+
+
+Figure: \@ref(fig:fig10-nonN) shows a nonnormalised boxplot of counts per samples. Figure  \@ref(fig:fig-violin) shows a violin plot of normalised counts per sample
+
+Top significantly expressed genes - Table: \@ref(tab:tab-SigExpGenes) where the p-adjusted value is < 0.05 and absolute value of log2FoldChange is > 1.5. Table is alphabetically sorted.
+
+
+
+## Functional enrichement analysis
+Functional enrichment analysis has shown following biological processes Table: \@ref(tab:tab2-FEA) involved. Top biological processes activated were related to immunity and infection.
+Results were ilustrated on the barplot - figure: \@ref(fig:fig11-dot), goplot - figure: \@ref(fig:fig12-GOgoplot) and connective network map - figure - \@ref(fig:fig13-cnetplot)
+
+Figure \@ref(fig:MAPK-path) is an example of pathway shown to be involved in results of the FEA. 
+
+Figure: \@ref(fig:fig-MDSplot) shows the MDS plot of R3 and control groups. It shows  3R samples are similar to each other and dissimilar to the control group. 
+
+Figure \@ref(fig:BCVplot) shows the scatterplot of biological coefficient varriation against the average abundance of each gene. It is considered reasonable for our samples
+
+Table \@ref(tab:tab-quasiF) shows top 10 significantlly expressed genes based on quasi-likelihood F-tests.
+Table \@ref(tab:tab-quasiR) shows top 10 significantlly expressed genes based on likelihood ratio tests. Both tests gave us same results, however only MAPT gene and LINC00973 were part of the top upregulated or top downregulated genes as genes without p-values and p-adjusted values were also considered.
+
+## Results of the article
+	- Lentivirus infection of SH-SY5Y neuroblastoma cells yields isoform-specific overexpression of tau
+	- Tau isoform overexpression and treatment with Aβ do not result in different nuclear/cytoplasmic total tau ratios
+	- The relationship between tau isoform overexpression and DNA damage was inconclusive
+	- Overexpression of 3R tau results in a consistent pattern of cell death
+	- Tau isoforms, AD, and PSP produce uniquely altered gene expression
+	- Tau isoforms, AD, and PSP produce distinct activation and repression of transposable elements
+
+## Comparison to the results of the article
+Our analysis showed 893 of differentially expressed genes with p-adjusted value < 0.05, whereas in the article number was significantly higher at 1608. The difference can be explained in the input data of the whole analysis, as our article analysed effects of transposable elements as well as differential gene expression analysis. Geodataset included 4 raw counts cvs files and a feature counts matrix .txt file, however in our analysis only .txt file was used.
+
+```{r FEA, fig.cap="FEA results of the article"}
+knitr::include_graphics("pics-article/FEA.png")
+```
+
+Both in the article and in our analysis functional enrichment analysis showed activation of biological processes related to the immunity and infection \@ref(fig:FEA). Article also showed suppression of processes related to synaptic function, energy production and cellular machinery involved in protein synthesis
+
+
+# Conclusion
+In this study, they provide insight into how 3R and 4R tau isoforms uniquely affect the transcriptome and cell death. They show that overexpression of these isoforms, especially 4R tau, are sufficient to produce differential expression of transposable elements, a therapeutically targetable, proposed source of inflammation and cause of cell death which has only recently been discovered in the context of tauopathies. They show that while family-level counts of transposable element expression show more significant differences in LTRs and hERVs, LINEs and SINEs, which represent relatively autonomous transposable elements that have been previously associated with other neurological disorders, appear more widely dysregulated at the locus-level.
+	Their analyses show overexpression of different tau isoforms and their interactions with amyloid-beta in SH-SY5Y cells result in isoform-specific changes in the transcriptome, with locus-specific transposable element dysregulation patterns paralleling those seen in patients with Alzheimer’s disease and progressive supranuclear palsy.
+	The study provides additional evidence that transposable elements may play a role in tauopathies and provides further insight into the locations of transposable element expression in the genome in the context of neurodegenerative diseases.
+
+
+# Literature
